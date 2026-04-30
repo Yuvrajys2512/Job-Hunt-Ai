@@ -1,0 +1,143 @@
+version: "3.9"
+
+# ── Shared network ────────────────────────────────────────────────────────────
+# All containers join this network, so they can reach each other by
+# their service name (e.g. "db", "redis") instead of IP addresses.
+networks:
+  jobhunt_network:
+    driver: bridge
+
+# ── Named volumes ─────────────────────────────────────────────────────────────
+# Volumes persist data across container restarts.
+# Without this, every time you restart the db container, your data is gone.
+volumes:
+  postgres_data:
+  redis_data:
+
+services:
+
+  # ── PostgreSQL database ─────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine         # alpine = tiny image (~80MB vs ~400MB)
+    restart: unless-stopped           # auto-restart if it crashes
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data   # persist DB files on host
+    ports:
+      - "5432:5432"                   # expose so you can connect from a DB GUI
+    networks:
+      - jobhunt_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ───────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - jobhunt_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI backend ─────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env                    # loads all variables from your .env file
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app                # mount source code — enables --reload
+    networks:
+      - jobhunt_network
+    depends_on:
+      db:
+        condition: service_healthy    # wait until db passes healthcheck
+      redis:
+        condition: service_healthy
+
+  # ── Celery worker ───────────────────────────────────────────────────────────
+  # Same image as the API — different start command.
+  # The worker process picks up tasks from the Redis queue and runs them.
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+    volumes:
+      - ./backend:/app
+    networks:
+      - jobhunt_network
+    depends_on:
+      - api
+      - redis
+      - db
+
+  # ── Celery Flower (task monitor dashboard) ──────────────────────────────────
+  # Visit http://localhost:5555 to see all running/queued/failed tasks.
+  # Invaluable for debugging during development.
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    command: celery -A app.workers.celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    networks:
+      - jobhunt_network
+    depends_on:
+      - worker
+
+  # ── Playwright browser automation service ───────────────────────────────────
+  playwright:
+    build:
+      context: ./playwright-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./playwright-service:/app
+    networks:
+      - jobhunt_network
+    # Playwright needs these to run a real browser headlessly in a container
+    shm_size: '2gb'                   # shared memory — browsers need this
+    environment:
+      - DISPLAY=:99                   # virtual display
+
+  # ── Next.js frontend ────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules             # don't override node_modules with host
+    networks:
+      - jobhunt_network
+    depends_on:
+      - api

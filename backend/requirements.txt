@@ -1,0 +1,38 @@
+# ─── Web framework ───────────────────────────────────────
+fastapi==0.111.0
+uvicorn[standard]==0.29.0      # ASGI server that runs FastAPI
+python-multipart==0.0.9        # For file uploads (resume PDFs)
+
+# ─── Database ────────────────────────────────────────────
+sqlalchemy==2.0.30             # ORM — Python objects ↔ DB tables
+alembic==1.13.1                # DB migrations — version control for your schema
+asyncpg==0.29.0                # Async PostgreSQL driver (works with SQLAlchemy async)
+psycopg2-binary==2.9.9         # Sync driver (used by Alembic for migrations)
+
+# ─── Task queue ──────────────────────────────────────────
+celery==5.4.0                  # Background task processor
+redis==5.0.4                   # Redis client (used by Celery as broker)
+flower==2.0.1                  # Celery dashboard (monitor tasks in browser)
+
+# ─── Auth & Security ─────────────────────────────────────
+python-jose[cryptography]==3.3.0   # JWT token creation and validation
+passlib[bcrypt]==1.7.4             # Password hashing (bcrypt is the gold standard)
+
+# ─── AI ──────────────────────────────────────────────────
+anthropic==0.28.0              # Claude API client
+
+# ─── HTTP client ─────────────────────────────────────────
+httpx==0.27.0                  # Async HTTP client (for calling external APIs)
+
+# ─── Validation & config ─────────────────────────────────
+pydantic==2.7.1                # Data validation (FastAPI is built on this)
+pydantic-settings==2.2.1       # Load config from .env files
+
+# ─── PDF generation ──────────────────────────────────────
+weasyprint==62.3               # HTML → PDF (for resume generation)
+jinja2==3.1.4                  # HTML templating (builds the resume HTML)
+
+# ─── Dev / testing ───────────────────────────────────────
+pytest==8.2.0
+pytest-asyncio==0.23.7
+httpx==0.27.0                  # Also used as async test client
